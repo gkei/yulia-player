@@ -136,22 +136,33 @@ function ghHeaders(raw) {
   if (pat()) h.Authorization = "Bearer " + pat();
   return h;
 }
-async function vaultList() {
-  const r = await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents?ref=${GH.ref}`,
-                        { headers: ghHeaders(false) });
+async function ghContents(subpath) {
+  const u = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents${subpath ? "/" + encodeURI(subpath) : ""}?ref=${GH.ref}&cb=${Date.now()}`;
+  const r = await fetch(u, { headers: ghHeaders(false), cache: "no-store" });
   if (!r.ok) {
-    if (r.status === 401 || r.status === 403) throw new Error("vault key rejected — check it in ⚙️ settings");
+    if (r.status === 401 || r.status === 403) throw new Error("vault key rejected \u2014 check it in \u2699\uFE0F settings");
     if (r.status === 404) throw new Error("vault not found (private repo needs your key)");
     throw new Error("vault error " + r.status);
   }
   const d = await r.json();
   if (!Array.isArray(d)) throw new Error("vault is not a file list");
-  return d.filter(x => x.type === "file" && /\.(mp3|m4a|flac|ogg|opus|wav)$/i.test(x.name))
-    .map(x => {
-      const meta = parseName(x.name);
-      return { id: "local:" + x.path, name: meta.name, artists: meta.artists, album: meta.album,
-               image: "", added_at: "", duration_ms: 0, uri: "", url: "", ghSize: x.size };
-    });
+  return d;
+}
+async function vaultList() {
+  const found = [];
+  const walk = async (dir, depth) => {
+    const entries = await ghContents(dir);
+    for (const x of entries) {
+      if (x.type === "file" && /\.(mp3|m4a|aac|flac|ogg|opus|wav)$/i.test(x.name)) found.push(x);
+      else if (x.type === "dir" && depth > 0) await walk(x.path, depth - 1);
+    }
+  };
+  await walk("", 4);
+  return found.map(x => {
+    const meta = parseName(x.name);
+    return { id: "local:" + x.path, name: meta.name, artists: meta.artists, album: meta.album,
+             image: "", added_at: "", duration_ms: 0, uri: "", url: "", ghSize: x.size };
+  });
 }
 function parseName(fn) {
   let base = fn.replace(/\.[^.]+$/, "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
