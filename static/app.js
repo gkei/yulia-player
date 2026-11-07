@@ -248,6 +248,7 @@ const esc = (s) => (s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;
 
 /* ---------- views ---------- */
 async function nav(kind, arg) {
+  document.body.classList.remove("nav-open");
   state.view = { kind, arg };
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.dataset.nav === kind));
   const v = $("#view");
@@ -263,6 +264,7 @@ async function nav(kind, arg) {
   }
   if (kind === "files") {
     v.innerHTML = `<h2 id="vTitle">\uD83D\uDCC1 My Music</h2><div class="sub" id="vSub"></div><div id="vMore"></div>
+      <div class="searchbar"><input id="q" placeholder="🔍 search title, album or artist…" autocomplete="off" spellcheck="false"></div>
       <table><thead><tr><th class="num">#</th><th></th><th>Title</th><th>Album</th><th></th><th></th></tr></thead><tbody id="rows"></tbody></table>`;
     (async () => {
       if (!pat()) {
@@ -275,6 +277,7 @@ async function nav(kind, arg) {
       try {
         const items = await vaultList();
         $("#vSub").textContent = `${items.length} files \u00B7 full length \u00B7 from your private vault`;
+        state.viewBase = items; state.viewPl = null; wireSearch();
         renderRows(items, null);
         const vc = $("#vaultCount"); if (vc) vc.textContent = items.length ? `(${items.length})` : "";
       } catch (e) {
@@ -287,12 +290,15 @@ async function nav(kind, arg) {
   if (kind === "liked" || kind === "playlist") {
     const isLiked = kind === "liked";
     v.innerHTML = `<h2 id="vTitle">${isLiked ? "❤️ Liked Songs" : "…"}</h2><div class="sub" id="vSub"></div><div id="vMore"></div>
+      <div class="searchbar"><input id="q" placeholder="🔍 search title, album or artist…" autocomplete="off" spellcheck="false"></div>
       <table><thead><tr><th class="num sortable" data-sort="idx">#</th><th></th><th class="sortable" data-sort="title">Title</th><th class="sortable" data-sort="album">Album</th><th class="sortable" data-sort="added">${isLiked ? "Added" : ""}</th><th></th></tr></thead><tbody id="rows"></tbody></table>`;
+    wireSearch();
     let offset = 0, total = 0, items = [];
     const fetchPage = async () => {
       const d = isLiked ? await api(`/api/liked?offset=${offset}`)
                         : await api(`/api/playlists/${arg}?offset=${offset}`);
       items = items.concat(d.items); total = d.total;
+      state.viewBase = items; state.viewPl = isLiked ? null : arg;
       offset = d.next_offset;
       renderRows(items, isLiked ? null : arg);
       $("#vSub").textContent = `${total} songs`;
@@ -576,6 +582,30 @@ function walkQueue(step) {
   });
 })();
 
+/* ---------- search (title / album / artist) ---------- */
+function wireSearch() {
+  const qi = document.getElementById("q");
+  if (!qi) return;
+  if (!state.fullLiked) loadLib().then(lib => { state.fullLiked = (lib && lib.liked) || []; }).catch(() => {});
+  qi.oninput = () => {
+    const qq = qi.value.toLowerCase().trim();
+    const base = state.viewBase || [];
+    const likedView = state.view && state.view.kind === "liked";
+    let pool = likedView && state.fullLiked && state.fullLiked.length ? state.fullLiked : base;
+    pool = pool.filter(t => (OVER[t.id] ?? 0) !== -1);
+    const f = !qq ? base : pool.filter(t =>
+      ((t.name || "") + " " + (t.album || "") + " " + (t.artists || []).join(" ")).toLowerCase().includes(qq));
+    renderRows(f, state.viewPl || null);
+    const sub = document.getElementById("vSub");
+    if (sub) sub.textContent = qq ? `${f.length} of ${pool.length} matches` : `${base.length} songs`;
+  };
+}
+
+/* ---------- burger / drawer / splash ---------- */
+$("#burger").onclick = () => document.body.classList.toggle("nav-open");
+const _scrim = document.querySelector(".navscrim");
+if (_scrim) _scrim.onclick = () => document.body.classList.remove("nav-open");
+
 /* ---------- settings (vault key) ---------- */
 $("#gear").onclick = () => {
   $("#patIn").value = pat();
@@ -603,4 +633,7 @@ $("#patSave").onclick = async () => {
 };
 
 document.querySelectorAll("[data-nav]").forEach(a => a.onclick = (e) => { e.preventDefault(); nav(a.dataset.nav); });
-boot().catch(e => toast(e.message, true));
+boot().catch(e => toast(e.message, true)).finally(() => {
+  const sp = document.getElementById("splash");
+  if (sp) setTimeout(() => sp.classList.add("hidden"), 650);
+});

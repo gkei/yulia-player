@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Yulia Player">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#12100b">
 <link rel="manifest" href="manifest.json">
 <title>Yulia Player</title>
@@ -13,9 +14,16 @@
 </head>
 <body>
 
+<!-- branded launch screen (shows on PWA start / while booting) -->
+<div id="splash">
+  <div class="sp-logo">🎼 Yulia Player</div>
+  <div class="sp-bars"><i></i><i></i><i></i></div>
+</div>
+
 <!-- app -->
 <div id="app" class="hidden">
   <header>
+    <button id="burger" class="burger" title="Menu">☰</button>
     <div class="brand">🎼 Yulia Player</div>
     <div id="whoami" class="whoami"></div>
   </header>
@@ -28,6 +36,7 @@
       <div class="navhead">Playlists</div>
       <div id="playlistNav" class="plnav"><span class="dim">loading…</span></div>
     </nav>
+    <div class="navscrim"></div>
     <main id="view"></main>
   </div>
 
