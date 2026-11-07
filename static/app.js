@@ -8,7 +8,8 @@ const LS = {
 };
 const GH = { owner: "gkei", repo: "yulia-music", ref: "main" };
 const pat = () => LS.get("pat", "");
-let OVER = LS.get("over", {}) || {};      /* like/dislike overlay: id -> 1 | 0 | -1 */
+let OVER = LS.get("over", {}) || {};      /* rating overlay: id -> 3|4|5 stars, 0 cleared, -1 disliked */
+Object.keys(OVER).forEach(k => { if (OVER[k] === 1) OVER[k] = 5; });   /* legacy likes -> 5 stars */
 let RES  = LS.get("res", {})  || {};      /* resolver cache: id -> {audio, art, src, title, ts} */
 let _libP = null;
 const loadLib = () => _libP || (_libP = fetch("library.json").then(r => {
@@ -39,19 +40,24 @@ const api = async (path, opts = {}) => {
   if (p === "/api/liked/contains") {
     const lib = await loadLib();
     const inLib = new Set((lib.liked || []).map(t => t.id));
-    const results = {};
+    const results = {}, rs = {};
     for (const id of (q.get("ids") || "").split(",").filter(Boolean)) {
       const ov = OVER[id];
-      results[id] = ov === undefined ? inLib.has(id) : ov === 1;
+      results[id] = ov === undefined ? inLib.has(id) : ov >= 3;
+      rs[id] = ov === undefined ? 0 : (ov >= 3 ? ov : 0);
     }
-    return { results };
+    return { results, ratings: rs };
   }
 
   let m = p.match(/^\/api\/like\/(.+)$/);
-  if (m) { OVER[m[1]] = method === "PUT" ? 1 : 0; LS.set("over", OVER); return { ok: true }; }
+  if (m) {
+    OVER[m[1]] = method === "PUT" ? Math.max(3, Math.min(5, +((body || {}).stars) || 5)) : 0;
+    LS.set("over", OVER); pushRatings();
+    return { ok: true, stars: OVER[m[1]] };
+  }
 
   m = p.match(/^\/api\/dislike\/(.+)$/);
-  if (m) { OVER[m[1]] = -1; LS.set("over", OVER); return { logged_to_disliked: true }; }
+  if (m) { OVER[m[1]] = -1; LS.set("over", OVER); pushRatings(); return { logged_to_disliked: true }; }
 
   if (p === "/api/music-resolve") return musicResolve(body || {});
 
@@ -88,6 +94,14 @@ async function artLookup(q) {
   return "";
 }
 async function musicResolve({ id, q }) {
+  if (state.mapping && state.mapping[id]) {
+    try {
+      const url = await vaultFile(state.mapping[id]);
+      const artwork = await artLookup(q || "");
+      return { audio: url, artwork, source: "private vault",
+               label: "your private vault — full track", title: "" };
+    } catch (e) { /* fall through to preview */ }
+  }
   if (id && id.startsWith("local:")) {
     const url = await vaultFile(id.slice(6));
     const artwork = await artLookup(q || "");
@@ -183,7 +197,8 @@ const state = { me: null, playlists: [], track: null, playing: false, liked: fal
                 progress: 0, dur: 0, context: null, view: { kind: "home" }, sdk: null, webDevice: null,
                 offline: false, likedMap: {}, sortKey: "", sortDir: "asc",
                 yt: null, ytReady: false, ytVideo: null, ytPlaying: false,
-                queue: [], qIdx: -1 };
+                queue: [], qIdx: -1, loopOne: false, ratings: {},
+                mapping: null, vaultMeta: null, syncDenied: false };
 
 /* ---------- boot ---------- */
 async function boot() {
@@ -195,10 +210,12 @@ async function boot() {
   state.offline = !!state.me.offline;
   $("#whoami").innerHTML = `${state.me.display_name} <span class="pill ${state.me.product === "premium" ? "premium" : ""}">${(state.me.product || "").toUpperCase()}</span>` +
     (state.offline ? ` <span class="pill sdk">OFFLINE LIBRARY</span>` : "");
+  if (state.offline && pat()) await loadVaultData();
   loadPlaylists();
   nav(state.offline && !state.playlists.length ? "liked" : "home");
   if (state.offline) {
     $("#devPill").textContent = "offline mode";
+    if (LS.get("loop", false)) { state.loopOne = true; const bl = $("#btnLoop"); if (bl) bl.classList.add("on"); }
     $("#pTitle").textContent = `${(state.playlists.length ? "" : "")}329 liked songs ready`;
     $("#pArtists").textContent = "click any song — audio + album art, streamed for you";
     setInterval(() => {
@@ -276,6 +293,11 @@ async function nav(kind, arg) {
       }
       try {
         const items = await vaultList();
+        if (state.vaultMeta) items.forEach(it => {
+          const m2 = state.vaultMeta[it.id.slice(6)];
+          if (m2) { if (m2.title) it.name = m2.title; if (m2.artist) it.artists = [m2.artist];
+                    if (m2.album) it.album = m2.album; if (m2.duration_ms) it.duration_ms = m2.duration_ms; }
+        });
         $("#vSub").textContent = `${items.length} files \u00B7 full length \u00B7 from your private vault`;
         state.viewBase = items; state.viewPl = null; wireSearch();
         renderRows(items, null);
@@ -327,7 +349,7 @@ function renderRows(items, playlistId) {
       <td class="al">${esc(t.album)}</td>
       <td class="al">${t.added_at || ""}</td>
       <td class="rowbtns">
-        <button data-act="like" data-id="${t.id}" title="Like / unlike">${state.likedMap[t.id] ? "\u2764\uFE0F" : "\u{1F90D}"}</button>
+        <button class="rate ${state.ratings[t.id] >= 3 ? "rated" : ""}" data-act="like" data-id="${t.id}" title="Rate (tap: 3 → 4 → 5 → clear)">${rateGlyph(t.id)}</button>
         <button data-act="dislike" data-id="${t.id}" title="Dislike (also unlikes)">\u{1F44E}</button>
       </td>
     </tr>`).join("");
@@ -346,16 +368,21 @@ function renderRows(items, playlistId) {
     const id = b.dataset.id;
     try {
       if (b.dataset.act === "like") {
-        const now = !state.likedMap[id];
-        await api("/api/like/" + id, { method: now ? "PUT" : "DELETE" });
-        state.likedMap[id] = now;
-        toast(now ? "Liked \u2764\uFE0F" : "Removed from Liked");
+        const cur = state.ratings[id] || 0;
+        const next = cur < 3 ? 3 : cur === 3 ? 4 : cur === 4 ? 5 : 0;
+        if (next >= 3) await api("/api/like/" + id, { method: "PUT", body: JSON.stringify({ stars: next }) });
+        else await api("/api/like/" + id, { method: "DELETE" });
+        state.ratings[id] = next; state.likedMap[id] = next >= 3;
+        b.textContent = rateGlyph(id);
+        b.classList.toggle("rated", next >= 3);
+        toast(next >= 3 ? `Rated ${next} \u2605` : "Rating cleared");
       } else {
         await api("/api/dislike/" + id, { method: "POST" });
-        state.likedMap[id] = false;
+        state.ratings[id] = 0; state.likedMap[id] = false;
+        b.previousElementSibling.textContent = rateGlyph(id);
+        b.previousElementSibling.classList.remove("rated");
         toast("Disliked \u{1F44E}");
       }
-      renderRows(window._rows, playlistId);
     } catch (err) { toast(err.message, true); }
   });
   document.querySelectorAll("th.sortable").forEach(th => th.onclick = () => {
@@ -380,10 +407,11 @@ async function paintRowHearts(items) {
   try {
     const d = await api(`/api/liked/contains?ids=${ids.join(",")}`);
     Object.assign(state.likedMap, d.results || {});
+    Object.assign(state.ratings, d.ratings || {});
     document.querySelectorAll("#rows tr").forEach((tr, i) => {
       const t = window._rows[i]; if (!t) return;
       const btn = tr.querySelector('[data-act="like"]');
-      if (btn) btn.textContent = state.likedMap[t.id] ? "\u2764\uFE0F" : "\u{1F90D}";
+      if (btn) { btn.textContent = rateGlyph(t.id); btn.classList.toggle("rated", (state.ratings[t.id] || 0) >= 3); }
     });
   } catch {}
 }
@@ -420,7 +448,7 @@ async function pollPlayer(force) {
 async function checkLiked(id) {
   try {
     const d = await api(`/api/liked/contains?ids=${id}`);
-    state.liked = !!d.results[id];
+    state.liked = d.ratings ? (d.ratings[id] || 0) >= 3 : !!d.results[id];
   } catch { state.liked = false; }
   paintLike();
 }
@@ -442,8 +470,11 @@ function paintPlayer() {
 }
 function paintLike() {
   const b = $("#btnLike");
-  b.textContent = state.liked ? "❤️" : "🤍";
-  b.classList.toggle("on", state.liked);
+  const id = state.track && state.track.id;
+  const r = id ? (state.ratings[id] || 0) : 0;
+  b.textContent = r >= 3 ? "\u2605".repeat(r) : "\u2606\u2606\u2606\u2606\u2606";
+  b.classList.toggle("on", r >= 3);
+  b.title = r >= 3 ? `Rated ${r} stars (tap to change)` : "Rate this song (tap: 3 → 4 → 5 → clear)";
 }
 async function ctrl(action, body) {
   try { return await api("/api/player/" + action, { method: "POST", body: JSON.stringify(body || {}) }); }
@@ -480,10 +511,15 @@ $("#seekbar").onclick = async (e) => {
 
 $("#btnLike").onclick = async () => {
   if (!state.track) return;
+  const id = state.track.id;
   try {
-    if (state.liked) { await api("/api/like/" + state.track.id, { method: "DELETE" }); toast("Removed from Liked"); }
-    else { await api("/api/like/" + state.track.id, { method: "PUT" }); toast("Added to Liked ❤️"); }
-    state.liked = !state.liked; paintLike();
+    const cur = state.ratings[id] || 0;
+    const next = cur < 3 ? 3 : cur === 3 ? 4 : cur === 4 ? 5 : 0;
+    if (next >= 3) await api("/api/like/" + id, { method: "PUT", body: JSON.stringify({ stars: next }) });
+    else await api("/api/like/" + id, { method: "DELETE" });
+    state.ratings[id] = next; state.liked = next >= 3;
+    paintLike();
+    toast(next >= 3 ? `Rated ${next} \u2605` : "Rating cleared");
   } catch (e) { toast(e.message, true); }
 };
 $("#btnDislike").onclick = async () => {
@@ -576,7 +612,10 @@ function walkQueue(step) {
   if (!au) return;
   au.addEventListener("play", () => { state.playing = true; $("#btnPlay").textContent = "\u23F8"; });
   au.addEventListener("pause", () => { state.playing = false; $("#btnPlay").textContent = "\u25B6"; });
-  au.addEventListener("ended", () => walkQueue(1));
+  au.addEventListener("ended", () => {
+    if (state.loopOne && au.src) { au.currentTime = 0; au.play().catch(() => {}); }
+    else walkQueue(1);
+  });
   au.addEventListener("error", () => {
     if (au.src) { toast("Couldn\u2019t play that one \u2014 skipping", true); walkQueue(1); }
   });
@@ -602,9 +641,78 @@ function wireSearch() {
 }
 
 /* ---------- burger / drawer / splash ---------- */
+$("#btnLoop").onclick = () => {
+  state.loopOne = !state.loopOne;
+  LS.set("loop", state.loopOne);
+  $("#btnLoop").classList.toggle("on", state.loopOne);
+  toast(state.loopOne ? "Loop on \u2014 this song repeats \uD83D\uDD01" : "Loop off");
+};
 $("#burger").onclick = () => document.body.classList.toggle("nav-open");
 const _scrim = document.querySelector(".navscrim");
 if (_scrim) _scrim.onclick = () => document.body.classList.remove("nav-open");
+
+/* ---------- vault data: metadata / mapping / cloud ratings ---------- */
+function b64enc(s) { return btoa(String.fromCharCode(...new TextEncoder().encode(s))); }
+let _toasted = {};
+function toastOnce(key, msg, isErr) { if (_toasted[key]) return; _toasted[key] = 1; toast(msg, isErr); }
+async function vaultRaw(path) {
+  const r = await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${encodeURI(path)}?ref=${GH.ref}`,
+                        { headers: ghHeaders(true) });
+  return r.ok ? r.text() : null;
+}
+async function loadVaultData() {
+  if (!pat()) return;
+  try {
+    const [m, r, mp] = await Promise.all([vaultRaw("metadata.json"), vaultRaw("ratings.json"), vaultRaw("mapping.json")]);
+    if (mp) state.mapping = JSON.parse(mp);
+    if (m) state.vaultMeta = JSON.parse(m);
+    if (r) {
+      const cloud = JSON.parse(r) || {};
+      for (const [k, v] of Object.entries(cloud)) if (!OVER[k] || OVER[k] < 3) OVER[k] = v;
+      LS.set("over", OVER);
+      const cnt = Object.keys(cloud).length;
+      if (cnt) toastOnce("cloudRatings", `cloud ratings loaded \u2713 (${cnt})`);
+    }
+  } catch {}
+}
+async function pushRatings() {
+  if (!pat() || state.syncDenied) return;
+  try {
+    const base = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/ratings.json?ref=${GH.ref}`;
+    const h = ghHeaders(false);
+    const keep = {};
+    for (const [k, v] of Object.entries(OVER)) if (v >= 3) keep[k] = v;
+    const payload = (sha) => JSON.stringify({ message: "Yulia Player: ratings sync",
+      content: b64enc(JSON.stringify(keep, null, 1)), ...(sha ? { sha } : {}) });
+    const getSha = async () => {
+      const g = await fetch(base + "&cb=" + Date.now(), { headers: h, cache: "no-store" });
+      if (g.status === 404) return null;
+      if (g.status === 401 || g.status === 403) return false;
+      if (!g.ok) return false;
+      const j = await g.json();
+      return (j && j.sha) || null;
+    };
+    let sha = await getSha();
+    if (sha === false) {
+      state.syncDenied = true;
+      toastOnce("syncDenied", "ratings stay on this device \u2014 cloud sync needs a Read-write key (GitHub token settings)", true);
+      return;
+    }
+    const doPut = () => fetch(base, { method: "PUT",
+      headers: { ...h, "Content-Type": "application/json" }, body: payload(sha || undefined) });
+    let put = await doPut();
+    if (put.status === 422) {                       // file changed elsewhere: refetch sha, retry once
+      sha = await getSha();
+      if (sha) put = await doPut();
+    }
+    if (put.ok) { state.syncOK = true; state.syncDenied = false; return; }
+    if (put.status === 401 || put.status === 403) {
+      state.syncDenied = true;
+      toastOnce("syncDenied", "ratings stay on this device \u2014 cloud sync needs a Read-write key (GitHub token settings)", true);
+    }
+  } catch {}
+}
+const rateGlyph = (id) => { const r = state.ratings[id] || 0; return r >= 3 ? "\u2605".repeat(r) : "\u2606"; };
 
 /* ---------- settings (vault key) ---------- */
 $("#gear").onclick = () => {
@@ -621,7 +729,8 @@ $("#patSave").onclick = async () => {
   LS.set("pat", v);
   try {
     const files = await vaultList();
-    $("#patStatus").textContent = `connected \u2713 ${files.length} files in your vault`;
+    loadVaultData();
+    $("#patStatus").textContent = `connected \u2713 ${files.length} files \u00B7 ratings sync works if the key is Read-write`;
     toast(`vault connected \u2713 ${files.length} files`);
     const vc = $("#vaultCount"); if (vc) vc.textContent = `(${files.length})`;
     setTimeout(() => $("#settings").classList.add("hidden"), 900);

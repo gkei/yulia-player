@@ -168,3 +168,9 @@ header{position:relative}
   td .cov{width:36px;height:36px}
   .rowbtns button{font-size:17px;margin:0 5px}
 }
+
+/* loop + star ratings */
+#btnLoop.on{color:#ffd34d;filter:drop-shadow(0 0 6px #ffd34d88);opacity:1}
+.rowbtns .rate{font-size:13px;letter-spacing:1px;color:#77692f;background:none;border:0;cursor:pointer;padding:2px 4px}
+.rowbtns .rate.rated{color:#ffd34d;text-shadow:0 0 8px #ffd34d66}
+#btnLike{min-width:70px;letter-spacing:2px;font-size:15px}
