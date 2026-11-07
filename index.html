@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Yulia Player">
+<meta name="theme-color" content="#12100b">
+<link rel="manifest" href="manifest.json">
+<title>Yulia Player</title>
+<link rel="stylesheet" href="static/style.css">
+</head>
+<body>
+
+<!-- app -->
+<div id="app" class="hidden">
+  <header>
+    <div class="brand">🎼 Yulia Player</div>
+    <div id="whoami" class="whoami"></div>
+  </header>
+  <div class="shell">
+    <nav>
+      <a href="#" id="gear" style="border:1px solid #2b271d;border-radius:9px;text-align:center">⚙️ settings</a>
+      <a href="#" data-nav="home">🏠 Home</a>
+      <a href="#" data-nav="liked">❤️ Liked Songs <span id="likedCount" class="pill"></span></a>
+      <a href="#" data-nav="files">📁 My Music <span id="vaultCount" class="pill"></span></a>
+      <div class="navhead">Playlists</div>
+      <div id="playlistNav" class="plnav"><span class="dim">loading…</span></div>
+    </nav>
+    <main id="view"></main>
+  </div>
+
+  <footer id="player" class="player">
+    <div class="pl-track">
+      <img id="pImg" src="" alt="" class="hidden">
+      <div>
+        <div id="pTitle" class="p-title">Nothing playing</div>
+        <div id="pArtists" class="p-art dim">—</div>
+      </div>
+      <div class="pl-actions">
+        <button id="btnLike" title="Like this song" disabled>🤍</button>
+        <button id="btnDislike" title="Dislike: unlikes, logs to Disliked playlist, skips" disabled>👎</button>
+      </div>
+    </div>
+    <div class="pl-center">
+      <div class="pl-buttons">
+        <button id="btnShuffle" title="Shuffle">🔀</button>
+        <button id="btnPrev" title="Previous">⏮</button>
+        <button id="btnPlay" title="Play/Pause" disabled>▶</button>
+        <button id="btnNext" title="Next">⏭</button>
+      </div>
+      <div class="pl-prog">
+        <span id="tCur" class="dim">0:00</span>
+        <div id="seekbar" class="seek"><div id="seekFill"></div></div>
+        <span id="tDur" class="dim">0:00</span>
+      </div>
+    </div>
+    <div class="pl-right">
+      <span id="devPill" class="pill dev">no device</span>
+      <span id="sdkPill" class="pill sdk hidden">web player</span>
+      <input id="vol" type="range" min="0" max="100" value="50" title="Volume">
+    </div>
+  </footer>
+</div>
+
+<audio id="au" preload="none"></audio>
+<div id="settings" class="overlay hidden">
+  <div class="card">
+    <h1>⚙️ Settings</h1>
+    <p class="dim" style="margin:12px 0">Private vault key — a GitHub <b>fine-grained personal access token</b>,
+      read-only, scoped only to the <b>yulia-music</b> repository. Stored <b>only in this browser</b>,
+      sent only to api.github.com.</p>
+    <input id="patIn" type="password" placeholder="github_pat_..." autocomplete="off" style="width:100%">
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" id="patSave">Save &amp; connect</button>
+      <button class="btn" id="patClear">Forget key</button>
+      <button class="btn" id="patClose">Close</button>
+    </div>
+    <div class="dim" id="patStatus" style="margin-top:12px"></div>
+    <p class="dim" style="margin-top:12px;font-size:12px">Make one: github.com → Settings → Developer settings →
+      Personal access tokens → <b>Fine-grained</b> → Generate new → Repository access: <b>Only select repositories →
+      yulia-music</b> → Repository permissions: <b>Contents: Read-only</b> → Generate. Paste it here.</p>
+  </div>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="static/app.js"></script>
+</body>
+</html>
