@@ -190,3 +190,25 @@ header{position:relative}
   #app{height:100vh;height:100dvh;max-height:100dvh}
   .pl-prog{padding-bottom:2px}
 }
+
+/* ===== compact header + heading; never wrap the brand ===== */
+.brand{white-space:nowrap}
+h2{position:relative}
+#vTitle .h2-more{position:absolute;right:0;top:0}
+.h2-more .btn{padding:7px 15px;font-size:13.5px}
+@media (max-width:700px){
+  header{min-height:calc(46px + env(safe-area-inset-top))}
+  nav{top:calc(46px + env(safe-area-inset-top))}
+  body.nav-open .navscrim{top:calc(46px + env(safe-area-inset-top))}
+  .brand{font-size:15.5px}
+  main{padding:10px 12px}
+  h2{font-size:18px;margin-bottom:1px}
+  h2::after{width:54px;height:3px;margin-top:4px}
+  .sub{margin-bottom:8px}
+  .searchbar{margin-bottom:8px}
+  .searchbar input{padding:9px 12px;font-size:14px}
+  th{padding:6px 8px}
+  .player{gap:4px;padding:8px 12px calc(10px + env(safe-area-inset-bottom))}
+  .pl-actions{padding:3px 0;gap:26px}
+  .pl-center{gap:4px}
+}

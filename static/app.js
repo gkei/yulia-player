@@ -219,8 +219,9 @@ async function boot() {
   try { state.me = await api("/api/me"); } catch (e) { return showGate(e.message); }
   $("#app").classList.remove("hidden");
   state.offline = !!state.me.offline;
-  $("#whoami").innerHTML = `${state.me.display_name} <span class="pill ${state.me.product === "premium" ? "premium" : ""}">${(state.me.product || "").toUpperCase()}</span>` +
-    (state.offline ? ` <span class="pill sdk">OFFLINE LIBRARY</span>` : "");
+  $("#whoami").innerHTML = state.offline
+    ? `<span class="pill sdk">OFFLINE LIBRARY</span>`
+    : `${state.me.display_name} <span class="pill ${state.me.product === "premium" ? "premium" : ""}">${(state.me.product || "").toUpperCase()}</span>`;
   if (state.offline && pat()) await loadVaultData();
   loadPlaylists();
   nav(state.offline && !state.playlists.length ? "liked" : "home");
@@ -322,7 +323,7 @@ async function nav(kind, arg) {
   }
   if (kind === "liked" || kind === "playlist") {
     const isLiked = kind === "liked";
-    v.innerHTML = `<h2 id="vTitle">${isLiked ? "❤️ Liked Songs" : "…"}</h2><div class="sub" id="vSub"></div><div id="vMore"></div>
+    v.innerHTML = `<h2 id="vTitle">${isLiked ? "❤️ Liked Songs" : "…"}<span id="vMore" class="h2-more"></span></h2><div class="sub" id="vSub"></div>
       <div class="searchbar"><input id="q" placeholder="🔍 search title, album or artist…" autocomplete="off" spellcheck="false"></div>
       <table><thead><tr><th class="num sortable" data-sort="idx">#</th><th></th><th class="sortable" data-sort="title">Title</th><th class="sortable" data-sort="album">Album</th><th class="sortable" data-sort="added">${isLiked ? "Added" : ""}</th><th></th></tr></thead><tbody id="rows"></tbody></table>`;
     wireSearch();
@@ -340,7 +341,7 @@ async function nav(kind, arg) {
         b.onclick = () => nav("home"); $("#vTitle").prepend(b);
       }
       if (offset != null) {
-        $("#vMore").innerHTML = `<button class="btn" style="margin:14px 0">Load more</button>`;
+        $("#vMore").innerHTML = `<button class="btn">Load more</button>`;
         $("#vMore button").onclick = () => { $("#vMore").innerHTML = ""; fetchPage().catch(e => toast(e.message, true)); };
       } else $("#vMore").innerHTML = "";
     };
