@@ -174,3 +174,19 @@ header{position:relative}
 .rowbtns .rate{font-size:13px;letter-spacing:1px;color:#77692f;background:none;border:0;cursor:pointer;padding:2px 4px}
 .rowbtns .rate.rated{color:#ffd34d;text-shadow:0 0 8px #ffd34d66}
 #btnLike{min-width:70px;letter-spacing:2px;font-size:15px}
+
+/* ===== mobile safe areas: header under status bar / progress above home bar ===== */
+@media (max-width:700px){
+  header{height:auto;min-height:calc(54px + env(safe-area-inset-top));
+    padding-top:env(safe-area-inset-top)}
+  nav{top:calc(54px + env(safe-area-inset-top))}
+  body.nav-open .navscrim{top:calc(54px + env(safe-area-inset-top))}
+  .player{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  .toast{bottom:calc(110px + env(safe-area-inset-bottom))}
+  body::before{top:env(safe-area-inset-top)}
+}
+/* portrait too tall for 100vh fallbacks: never let the progress row fall off */
+@media (max-width:700px){
+  #app{height:100vh;height:100dvh;max-height:100dvh}
+  .pl-prog{padding-bottom:2px}
+}
